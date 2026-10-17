@@ -21,7 +21,7 @@
 (function () {
   "use strict";
 
-  const LANGS = ["en", "ru"];              // languages the picker offers
+  let LANGS = ["en"];  // заполняется списком из /web/i18n-index              // languages the picker offers
   const DEFAULT_LANG = "en";               // English unless the user picks another
   const LANG_KEY = "lang";                 // localStorage "strata.lang"
   // dictionaries live next to this file (i18n/ru.json), so the path is resolved from
@@ -34,7 +34,9 @@
     set(key, val) { try { localStorage.setItem("strata." + key, val); } catch (e) {} },
   };
 
-  let lang = LANGS.includes(store.get(LANG_KEY, DEFAULT_LANG)) ? store.get(LANG_KEY, DEFAULT_LANG) : DEFAULT_LANG;
+  // the saved choice is not validated here: at this point LANGS is only ["en"], the
+  // real list comes from /web/i18n-index in boot() (otherwise "zh" would become "en")
+  let lang = store.get(LANG_KEY, DEFAULT_LANG);
   let dict = null;                         // english -> translation
   let back = null;                         // translation -> english
   let dictLang = null;                      // which language `dict` holds
@@ -72,6 +74,15 @@
       ru: /^([\d\s.,]+) инструментов? · подключено ([\d\s.,]+) из ([\d\s.,]+) серверов$/,
       to: (m) => `${m[1]} ${i18nPlural(m[1], ["инструмент", "инструмента", "инструментов"])} · подключено ${m[2]} из ${m[3]} серверов`,
       back: (m) => `${m[1]} tools · ${m[2]} of ${m[3]} servers connected` },
+    { en: /^([\d\s.,]+) tools from (.+); the model calls them when it decides to$/,
+      ru: /^([\d\s.,]+) инструментов? от (.+); модель вызывает их, когда решит$/,
+      to: (m) => `${m[1]} ${i18nPlural(m[1], ["инструмент", "инструмента", "инструментов"])} от ${m[2]}; `
+        + `модель вызывает их, когда решит`,
+      back: (m) => `${m[1]} tools from ${m[2]}; the model calls them when it decides to` },
+    { en: /^([\w-]+) · ([\d\s.,]+) tools( · .+)?$/,
+      ru: /^([\w-]+) · ([\d\s.,]+) инструментов?( · .+)?$/,
+      to: (m) => `${m[1]} · ${m[2]} ${i18nPlural(m[2], ["инструмент", "инструмента", "инструментов"])}${m[3] || ""}`,
+      back: (m) => `${m[1]} · ${m[2]} tools${m[3] || ""}` },
     { en: /^([\d\s.,]+) tools$/, ru: /^([\d\s.,]+) инструментов?$/,
       to: (m) => `${m[1]} ${i18nPlural(m[1], ["инструмент", "инструмента", "инструментов"])}`,
       back: (m) => `${m[1]} tools` },
@@ -105,7 +116,51 @@
     { en: /^last: (.+)$/, ru: /^прошлый: (.+)$/, to: (m) => `прошлый: ${i18nTr(m[1])}`, back: (m) => `last: ${i18nTr(m[1])}` },
   ];
 
+  // Chinese has no plural forms, so its templates are plain strings; this mirrors RULES
+  // one to one and is used only while the Chinese dictionary is active — otherwise the
+  // Russian templates above would leak into the Chinese interface
+  const ZH_RULES = [
+    { en: /^Reading prompt · ([\d.,]+)%$/, to: "读取提示词 · $1%" },
+    { en: /^Generating · ([\d.,]+) tok\/s$/, to: "生成中 · $1 tok/s" },
+    { en: /^(\d+) queued$/, to: "排队 $1 个" },
+    { en: /^([\d\s.,]+) tokens · ([\d.,]+) tok\/s$/, to: "$1 个 token · $2 tok/s" },
+    { en: /^([\d\s.,]+) \/ ([\d\s.,]+) tokens · ([\d.,]+)%$/, to: "$1 / $2 个 token · $3%" },
+    { en: /^([\d\s.,]+) tokens at ([\d.,]+) tok\/s$/, to: "$1 个 token，$2 tok/s" },
+    { en: /^([\d\s.,]+) tokens$/, to: "$1 个 token" },
+    { en: /^the model calls them when it decides to$/, to: "由模型自行决定调用" },
+    { en: /^([\d\s.,]+) tools · ([\d\s.,]+) of ([\d\s.,]+) servers connected$/,
+      to: "$1 个工具 · 已连接 $2 / $3 个服务器" },
+    { en: /^([\d\s.,]+) tools from (.+); the model calls them when it decides to$/,
+      to: "$1 个工具来自 $2；由模型自行决定调用" },
+    { en: /^([\w-]+) · ([\d\s.,]+) tools( · .+)?$/, to: "$1 · $2 个工具$3" },
+    { en: /^([\d\s.,]+) tools$/, to: "$1 个工具" },
+    { en: /^Thought for ([\d.,]+) s$/, to: "思考用时 $1 秒" },
+    { en: /^Show all \((\d+)\)$/, to: "显示全部 ($1)" },
+    { en: /^just now$/, to: "刚刚" },
+    { en: /^([\d.,]+) min ago$/, to: "$1 分钟前" },
+    { en: /^([\d.,]+) h ago$/, to: "$1 小时前" },
+    { en: /^(\d+) tool calls?$/, to: (m) => `${m[1]} 次工具调用` },
+    { en: /^([\d.,]+) of ([\d.,]+) requests reused part of their prompt$/,
+      to: "$2 个请求中有 $1 个复用了部分提示词" },
+    { en: /^(.+) runs on this PC\. Nothing leaves it\.$/, to: "$1 在本机运行，数据不出本机。" },
+    { en: /^of ([\d.,]+) W limit$/, to: "$1 瓦上限" },
+    { en: /^([\d.,]+) experts cached$/, to: "$1 个专家已缓存" },
+    { en: /^([\d.,]+) cores · ([\d.,]+) threads$/, to: "$1 核 · $2 线程" },
+    { en: /^(Projection|Additive) control vector on layers (\d+)[–-](\d+)(?: \(layer (\d+)'s direction\))?\. Per chat in Sampling\. Its package describes the vector as a refusal-direction projection; measure the speed yourself$/,
+      to: (m) => `${m[1] === "Projection" ? "投影" : "叠加"}控制向量，作用于第 ${m[2]}–${m[3]} 层`
+        + `${m[4] ? `（第 ${m[4]} 层方向）` : ""}。在「采样」中按会话启用。`
+        + `其说明称该向量为拒绝方向的投影；速度请自行测试。` },
+    { en: /^last: (.+)$/, to: (m) => `上次：${i18nTr(m[1])}` },
+  ];
+
   function rule(key, dir) {
+    if (dir === "to" && dictLang === "zh") {
+      for (const r of ZH_RULES) {
+        if (!r.en.test(key)) continue;
+        return typeof r.to === "function" ? key.replace(r.en, (...a) => r.to(a)) : key.replace(r.en, r.to);
+      }
+      return null;
+    }
     for (const r of RULES) {
       const re = dir === "to" ? r.en : r.ru;
       const tpl = dir === "to" ? r.to : r.back;
@@ -197,12 +252,23 @@
     });
   }
 
+  // Picking a language saves it and reloads the page: the dictionary is applied to the
+  // whole document from scratch, so a quick En → 中文 → Русский cannot leave the old
+  // language half-applied (that was the "stuck" case).
+  function pickLang(next) {
+    if (!LANGS.includes(next)) next = DEFAULT_LANG;
+    if (next === lang) return;
+    store.set(LANG_KEY, next);
+    location.reload();
+  }
+
   /* ------------------------------------------------------------------ boot */
   function loadDict(code) {
-    return fetch(HERE + "i18n/" + code + ".json", { cache: "no-cache" })
+    return fetch(HERE + "i18n-" + code + ".json", { cache: "no-cache" })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((json) => {
-        dict = json || {};
+        dict = {};
+        for (const [k, v] of Object.entries(json || {})) if (!k.startsWith("_")) dict[k] = v;
         back = {};
         for (const [en, tr] of Object.entries(dict)) if (!(tr in back)) back[tr] = en;
         dictLang = code;
@@ -212,9 +278,59 @@
   }
 
   function boot() {
-    // the picker shows the language you are in; a click switches to the next one
+    // the picker: a button with a drop-down of every language file the server found
     const btn = $("lang-btn");
-    if (btn) btn.onclick = () => setLang(LANGS[(LANGS.indexOf(lang) + 1) % LANGS.length] || DEFAULT_LANG);
+    let menu = null;
+    const closeMenu = () => {
+      if (!menu) return;
+      menu.remove(); menu = null;
+      if (btn) btn.setAttribute("aria-expanded", "false");
+    };
+    const openMenu = (list) => {
+      closeMenu();
+      menu = document.createElement("div");
+      menu.className = "lang-menu";
+      for (const it of [{code: "en", name: "English"}].concat(list)) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = it.name;
+        b.className = "lang-menu__item" + (it.code === lang ? " is-current" : "");
+        b.onclick = () => { closeMenu(); pickLang(it.code); };
+        menu.appendChild(b);
+      }
+      document.body.appendChild(menu);
+      const r = btn.getBoundingClientRect();
+      const vw = document.documentElement.clientWidth;
+      menu.style.top = Math.round(r.bottom + 6) + "px";
+      menu.style.right = Math.max(8, Math.round(vw - r.right)) + "px";
+      btn.setAttribute("aria-expanded", "true");
+    };
+    // the server lists what lies in web/i18n-*.json — a new language needs no code change
+    const loadIndex = () => fetch(HERE + "i18n-index", { cache: "no-cache" })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list) => {
+        list = Array.isArray(list) ? list : [];
+        LANGS = ["en"].concat(list.map((l) => l.code));
+        if (LANGS.indexOf(lang) < 0) { lang = DEFAULT_LANG; store.set(LANG_KEY, lang); }
+        return list;
+      })
+      .catch(() => { LANGS = ["en"]; lang = DEFAULT_LANG; store.set(LANG_KEY, lang); return []; });
+
+    if (btn) {
+      btn.setAttribute("aria-haspopup", "menu");
+      btn.setAttribute("aria-expanded", "false");
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        if (menu) { closeMenu(); return; }
+        loadIndex().then((list) => { label(); openMenu(list); });
+      };
+      document.addEventListener("click", (e) => {
+        if (menu && !menu.contains(e.target) && e.target !== btn) closeMenu();
+      });
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
+      window.addEventListener("scroll", closeMenu, true);
+      window.addEventListener("resize", closeMenu);
+    }
     // dynamic text (metrics, status labels, toasts) is translated right here, in the
     // observer's microtask — before the frame is painted
     new MutationObserver((records) => {
@@ -228,7 +344,9 @@
       }
     }).observe(document.body, { subtree: true, childList: true, characterData: true,
                                 attributes: true, attributeFilter: ATTRS });
-    setLang(lang);        // labels the button and, for a saved non-English choice, applies it
+    // the index first: it tells which dictionaries exist and validates the saved choice,
+    // so a reload right after picking 中文 really comes back up in Chinese
+    loadIndex().then(() => setLang(lang));
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
